@@ -7,6 +7,25 @@
 A simple rhythm game in your terminal. Plays a built-in chart, or loads BMS / bmson
 files with keysound + BGM playback via `rodio`.
 
+## In the Asciiverse
+
+**Every note you hit is a note of the song.** This is tapline as it comes
+in the [Asciiverse](https://asciiverse.sh): start it and the chart selector
+is already full. Next to tapline's own eight charts sit eight songs from
+Bellbeat, the Asciiverse's rhythm game, made into keysound charts: the band
+plays the backing, and each note falling down the lanes is one note of the
+melody. Hit it and the tune rings out of your keyboard; miss it and the
+song has a hole in it. Hello, World chimes on a bell, Segfault March
+stomps in two, Waltz for a Spinning Disk turns in three, and Kernel Panic
+and SIGTERM come at you as fast as the names promise. Every song has a
+4-key chart, where you play the notes on the beat and the band fills in
+the rest, and a 7-key chart that hands you the whole melody.
+
+Press `/` in the selector to search, `l` to step through the lane counts, Enter
+to play. `tapline --autoplay` lets a chart play itself, so you can hear
+how it should go. What this build changes is listed in
+[PATCHES.md](PATCHES.md).
+
 Notes fall down the lanes. Tap the letters as they cross the judgment line.
 Chain hits for combo, chase accuracy, panic-quit with Esc.
 
@@ -48,6 +67,7 @@ tapline --dir ~/bms                    # open selector on a specific directory
 tapline --file song.bms                # skip selector, play one chart (auto lane detection)
 tapline --file song.bms --no-audio     # play a chart, silent
 tapline --built-in --bpm 160           # play the built-in practice chart
+tapline --file song.bms --autoplay     # watch a chart play itself
 ```
 
 Charts with `#PREVIEW` loop their preview audio while selected. Moving to another
@@ -81,12 +101,14 @@ locked to what you see. `--audio-lead-ms` shifts every scheduled sound
 
 ## Song discovery
 
-Without `--file` or `--built-in`, tapline scans the first directory it finds:
+Without `--file` or `--built-in`, tapline lists the charts in
+`$TAPLINE_SONGS_DIR` when it is set. Otherwise it lists, together:
 
-1. `$TAPLINE_SONGS_DIR`
-2. `./songs`
-3. `./tests/fixtures`
-4. `~/.tapline/songs`
+1. `songs` beside the tapline program (the charts that come with it)
+2. `songs` in your state folder (your own charts; see "Personal bests"
+   for where that is)
+3. the first of `./songs`, `./tests/fixtures` and `~/.tapline/songs`
+   that exists
 
 If nothing is found, the built-in practice chart plays. Scanning is recursive
 (up to 5 levels deep) and picks up `.bms`, `.bml`, `.bme`, `.pms`, `.bmson`.
@@ -339,13 +361,19 @@ still require input; the latest result records whether it was enabled. Built-in
 practice records are separate for each BPM. Countdown and audio settings do not
 split records.
 
-Results are stored in `results.json` inside:
+Results are stored in `results.json` in your state folder:
 
-- Linux: `$XDG_DATA_HOME/tapline`, or `~/.local/share/tapline`
+- `$XDG_STATE_HOME/tapline` when that is set
+- Linux: `~/.local/state/tapline`
 - macOS: `~/Library/Application Support/tapline`
 - Windows: `%LOCALAPPDATA%\tapline`
 
-Set `TAPLINE_DATA_DIR` to override this directory. No accounts or network service
+`TAPLINE_STATE_DIR` sets the state folder; `TAPLINE_DATA_DIR` sets the folder
+for `results.json` alone. A `results.json` in the folder earlier versions
+used (`~/.local/share/tapline` on Linux) is copied over the first time.
+
+A session log: `RUST_LOG=debug tapline 2>tapline.log`. `TAPLINE_NO_AUDIO=1`
+keeps tapline from opening a sound device at all. No accounts or network service
 are used. Writes replace the file only after a complete temporary file is flushed.
 Use one running instance when saving progress to the same directory.
 
