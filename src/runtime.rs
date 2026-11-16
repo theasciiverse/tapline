@@ -261,9 +261,12 @@ fn draw_frame(
             "{} at {now:.0} ms",
             if mode == 1 { "countdown" } else { "play" }
         );
-        queue!(state.screen, terminal::Clear(terminal::ClearType::All))?;
         state.prev_mode = mode;
     }
+    // Each frame is drawn whole on a blank model, so text that moves (the
+    // centred judgement counters when a count gains a digit) leaves no
+    // stale letters behind; `present` still sends only the changed cells.
+    queue!(state.screen, terminal::Clear(terminal::ClearType::All))?;
     draw_mode(&mut state.screen, game, bank, opts, bga, mode, now)?;
     state.screen.present(out)?;
     Ok(())
