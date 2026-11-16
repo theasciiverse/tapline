@@ -358,7 +358,9 @@ fn draw_frame(
             progress[state.indices[i]],
             format_chart_row(m, arrow)
         );
-        let clipped: String = text.chars().take(cols as usize).collect();
+        // the row starts at column 2: leave those two and the last column
+        // free, or a long row wraps onto the next one
+        let clipped: String = text.chars().take(cols.saturating_sub(3) as usize).collect();
         let color = if selected { Color::White } else { Color::Grey };
         queue!(out, cursor::MoveTo(2, y), SetForegroundColor(color))?;
         if selected {
