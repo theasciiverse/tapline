@@ -15,6 +15,7 @@ pub struct PlayOptions {
     pub synth_mode: bool,
     pub auto_ks: bool,
     pub audio_lead_ms: f64,
+    pub autoplay: bool,
 }
 
 impl PlayOptions {
@@ -24,6 +25,7 @@ impl PlayOptions {
             synth_mode: args.synth,
             auto_ks: args.auto_ks,
             audio_lead_ms: args.audio_lead_ms,
+            autoplay: args.autoplay,
         }
     }
 }
@@ -68,7 +70,11 @@ pub fn play_chart(
         game.miss,
         game.gauge.value()
     );
-    let progress = save_result(identity.as_ref(), &game, args.auto_ks);
+    let progress = if opts.autoplay {
+        "Autoplay: not saved".to_string()
+    } else {
+        save_result(identity.as_ref(), &game, args.auto_ks)
+    };
     after_playback(bank, || show_result(out, &game, &progress))
 }
 
@@ -148,6 +154,9 @@ fn run_game(
                 state.pressed_keys
             );
         }
+        if opts.autoplay && now >= opts.countdown_ms {
+            autoplay_frame(game, bank, opts, &mut state, now);
+        }
         draw_frame(out, game, bank, opts, &mut state, &mut bga, now)?;
         pump_input(out, game, bank, opts, &mut state, start, next_frame)?;
         next_frame = advance_deadline(next_frame);
@@ -157,6 +166,9 @@ fn run_game(
 
 struct LoopState {
     quit: bool,
+    /// Autoplay: the next note to hit, and the long notes held (lane, end).
+    auto_cursor: usize,
+    auto_held: Vec<(usize, f64)>,
     pressed_keys: HashSet<char>,
     bgm_cursor: usize,
     note_snd_cursor: usize,
@@ -169,12 +181,50 @@ impl LoopState {
     fn new(auto_notes: Vec<(f64, usize, Option<u32>)>) -> Self {
         Self {
             quit: false,
+            auto_cursor: 0,
+            auto_held: Vec::new(),
             pressed_keys: HashSet::new(),
             bgm_cursor: 0,
             note_snd_cursor: 0,
             prev_mode: 0,
             auto_notes,
             screen: Screen::new(),
+        }
+    }
+}
+
+/// Autoplay: press each note's lane as the note reaches the line, as a
+/// player would (its keysound plays), and let go of long notes at their end.
+fn autoplay_frame(
+    game: &mut game::Game,
+    bank: &audio::SampleBank,
+    opts: &PlayOptions,
+    state: &mut LoopState,
+    now: f64,
+) {
+    let mut i = 0;
+    while i < state.auto_held.len() {
+        let (lane, end) = state.auto_held[i];
+        if now >= end {
+            game.release(lane, now);
+            state.auto_held.swap_remove(i);
+        } else {
+            i += 1;
+        }
+    }
+    while let Some(note) = game.chart.notes.get(state.auto_cursor) {
+        if note.time_ms > now {
+            break;
+        }
+        let (lane, end) = (note.lane, note.end_ms);
+        state.auto_cursor += 1;
+        let ks = game.hit(lane, now);
+        if !opts.auto_ks {
+            let gain = game.volume.gain(VolumeTarget::Key, now);
+            bank.play_hit_with_gain(lane, ks, opts.synth_mode, gain);
+        }
+        if let Some(end) = end {
+            state.auto_held.push((lane, end));
         }
     }
 }
@@ -207,7 +257,10 @@ fn draw_frame(
     state.screen.resize(cols, rows);
     let mode: u8 = if now < opts.countdown_ms { 1 } else { 2 };
     if mode != state.prev_mode {
-        log::info!("{} at {now:.0} ms", if mode == 1 { "countdown" } else { "play" });
+        log::info!(
+            "{} at {now:.0} ms",
+            if mode == 1 { "countdown" } else { "play" }
+        );
         queue!(state.screen, terminal::Clear(terminal::ClearType::All))?;
         state.prev_mode = mode;
     }
@@ -482,7 +535,50 @@ mod tests {
             synth_mode: true,
             auto_ks,
             audio_lead_ms: 0.0,
+            autoplay: false,
         }
+    }
+
+    #[test]
+    fn autoplay_hits_every_note_and_holds_long_notes_through() {
+        let notes = vec![
+            Note {
+                time_ms: 3000.0,
+                lane: 0,
+                ..Note::default()
+            },
+            Note {
+                time_ms: 3000.0,
+                lane: 3,
+                ..Note::default()
+            },
+            Note {
+                time_ms: 3250.0,
+                lane: 1,
+                end_ms: Some(4000.0),
+                ..Note::default()
+            },
+            Note {
+                time_ms: 3500.0,
+                lane: 2,
+                ..Note::default()
+            },
+        ];
+        let mut game = Game::new(base_chart(4, notes));
+        let bank = audio::SampleBank::silent();
+        let mut o = opts(false);
+        o.autoplay = true;
+        let mut state = LoopState::new(Vec::new());
+        let mut now = 2000.0;
+        while now < 6000.0 {
+            autoplay_frame(&mut game, &bank, &o, &mut state, now);
+            game.check_misses(now);
+            now += 16.0;
+        }
+        assert_eq!(game.miss, 0);
+        assert_eq!(game.good, 0);
+        assert!(game.perfect >= 4, "{} perfect", game.perfect);
+        assert!(state.auto_held.is_empty());
     }
 
     #[test]

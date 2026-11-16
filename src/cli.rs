@@ -50,6 +50,10 @@ pub struct Args {
     /// earlier than the note time. Must be finite. Compensates for audio buffer latency.
     #[arg(long, default_value_t = 0.0, value_parser = parse_audio_lead)]
     pub audio_lead_ms: f64,
+
+    /// Watch the chart play itself: every note hit on time (nothing is saved).
+    #[arg(long)]
+    pub autoplay: bool,
 }
 
 impl Args {
