@@ -69,7 +69,7 @@ jobs:
           cp -r songs stage/
           tar -czf "dist/$ID-${{ matrix.target }}.tar.gz" -C stage .
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.target }}
           path: dist/*
@@ -104,7 +104,7 @@ jobs:
           cp -r songs stage/
           tar -czf "dist/$ID-${{ matrix.target }}.tar.gz" -C stage .
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.target }}
           path: dist/*
@@ -135,7 +135,7 @@ jobs:
           cp -r songs stage/
           (cd stage && 7z a -tzip "../dist/$ID-${{ matrix.target }}.zip" .)
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.target }}
           path: dist/*
