@@ -206,7 +206,11 @@ fn lead_in_shifts_the_first_note_by_the_specified_amount() {
 #[test]
 fn built_in_directory_scan_returns_all_shipped_charts() {
     let dir = root().join("songs");
-    let charts = tapline::select::scan(&dir);
+    // the eight hand-written charts at the top; songs/bellbeat has its own test
+    let charts: Vec<_> = tapline::select::scan(&dir)
+        .into_iter()
+        .filter(|m| m.path.parent() == Some(dir.as_path()))
+        .collect();
     assert_eq!(charts.len(), CHARTS.len());
     let titles: Vec<_> = charts.iter().map(|m| m.title.as_str()).collect();
     for e in CHARTS {
