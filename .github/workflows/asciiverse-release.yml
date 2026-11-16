@@ -1,0 +1,165 @@
+# Builds tapline for the Asciiverse catalog: one archive per target, named
+# <id>-<target>.tar.gz (Linux, macOS) or .zip (Windows), plus a SHA256SUMS
+# file, attached to a GitHub release (hub/catalog/SCHEMA.md,
+# release.source = "github"). Each archive has the binary at the top and
+# the songs folder beside it (the eight hand-written charts and the
+# Bellbeat keysound charts), where tapline looks for them.
+#
+# Tags look like v0.1.0+20261116-av.1: upstream's Cargo.toml version and
+# the date of the upstream commit, then our release. Linux builds are
+# glibc, not static musl: sound goes out through cpal and ALSA, linked
+# dynamically, so the binary needs libasound2 (the manifest's
+# system_deps). They are built on Ubuntu 22.04, so they run on glibc 2.35
+# and newer. macOS and Windows use Core Audio and WASAPI. Rust is pinned to
+# 1.93.1. The release step publishes whatever built.
+
+name: asciiverse-release
+
+on:
+  push:
+    tags: ["*-av.*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "existing tag to build and release"
+        required: true
+
+env:
+  ID: tapline
+  BIN: tapline
+  RUST: "1.93.1"
+  TAG: ${{ inputs.tag || github.ref_name }}
+  DOCS: LICENSE README.md PATCHES.md
+
+permissions:
+  contents: write
+
+jobs:
+  linux:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: x86_64-unknown-linux-gnu, runner: ubuntu-22.04 }
+          - { target: aarch64-unknown-linux-gnu, runner: ubuntu-22.04-arm }
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+
+      - name: Build
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev pkg-config
+          rustup toolchain install $RUST --profile minimal
+          cargo +$RUST build --release --locked
+          strip target/release/$BIN
+          file target/release/$BIN
+          # libc, libm, libgcc_s, and libasound, which the manifest declares
+          ldd target/release/$BIN
+          ! ldd target/release/$BIN | grep -v -E 'linux-vdso|libc\.so|libm\.so|libgcc_s|ld-linux|libasound'
+
+      - name: Package for av
+        run: |
+          # the binary at the top of the archive, where av looks for it
+          mkdir -p stage dist
+          cp target/release/$BIN $DOCS stage/
+          cp -r songs stage/
+          tar -czf "dist/$ID-${{ matrix.target }}.tar.gz" -C stage .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: dist/*
+
+  macos:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: aarch64-apple-darwin, runner: macos-15 }
+          - { target: x86_64-apple-darwin, runner: macos-15-intel }
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "11.0"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+
+      - name: Build
+        run: |
+          rustup toolchain install $RUST --profile minimal --target ${{ matrix.target }}
+          cargo +$RUST build --release --locked --target ${{ matrix.target }}
+          strip target/${{ matrix.target }}/release/$BIN
+          file target/${{ matrix.target }}/release/$BIN
+
+      - name: Package
+        run: |
+          mkdir -p stage dist
+          cp target/${{ matrix.target }}/release/$BIN $DOCS stage/
+          cp -r songs stage/
+          tar -czf "dist/$ID-${{ matrix.target }}.tar.gz" -C stage .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: dist/*
+
+  windows:
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [x86_64-pc-windows-msvc, aarch64-pc-windows-msvc]
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+
+      - name: Build
+        shell: bash
+        run: |
+          rustup toolchain install $RUST --profile minimal --target ${{ matrix.target }}
+          cargo +$RUST build --release --locked --target ${{ matrix.target }}
+
+      - name: Package
+        shell: bash
+        run: |
+          mkdir -p stage dist
+          cp target/${{ matrix.target }}/release/$BIN.exe $DOCS stage/
+          cp -r songs stage/
+          (cd stage && 7z a -tzip "../dist/$ID-${{ matrix.target }}.zip" .)
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: dist/*
+
+  release:
+    needs: [linux, macos, windows]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Checksums
+        working-directory: dist
+        run: sha256sum * > SHA256SUMS && cat SHA256SUMS
+
+      - name: Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
+            || gh release create "$TAG" -R "$GITHUB_REPOSITORY" --title "tapline $TAG" \
+                 --notes "tapline by unhappychoice (github.com/unhappychoice/tapline), built for the Asciiverse catalog with its eight charts and keysound charts of eight Bellbeat songs: one binary for Linux, macOS and Windows. MIT. Changes: see PATCHES.md."
+          gh release upload "$TAG" dist/* -R "$GITHUB_REPOSITORY" --clobber
