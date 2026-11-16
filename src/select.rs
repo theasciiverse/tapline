@@ -20,8 +20,15 @@ pub fn scan(root: &Path) -> Vec<ChartMeta> {
 }
 
 fn scan_with_identities(root: &Path, identities: &mut identities::Identities) -> Vec<ChartMeta> {
+    scan_roots(&[root], identities)
+}
+
+/// Every chart under any of the folders, sorted together.
+fn scan_roots(roots: &[&Path], identities: &mut identities::Identities) -> Vec<ChartMeta> {
     let mut out = Vec::new();
-    walk(root, 0, &mut out, identities);
+    for root in roots {
+        walk(root, 0, &mut out, identities);
+    }
     out.sort_by(|a, b| {
         a.title
             .to_ascii_lowercase()
@@ -92,6 +99,13 @@ impl SelectorState {
     pub fn scan(&mut self, root: &Path) -> Vec<ChartMeta> {
         self.lowercase_cache.clear();
         scan_with_identities(root, &mut self.identities)
+    }
+
+    /// Like `scan`, over several folders at once.
+    pub fn scan_all(&mut self, roots: &[std::path::PathBuf]) -> Vec<ChartMeta> {
+        self.lowercase_cache.clear();
+        let roots: Vec<&Path> = roots.iter().map(|r| r.as_path()).collect();
+        scan_roots(&roots, &mut self.identities)
     }
 
     fn refresh(&mut self, charts: &[ChartMeta]) {

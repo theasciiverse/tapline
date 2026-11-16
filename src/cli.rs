@@ -88,10 +88,14 @@ pub fn choose_chart_with_selector(
     if let Some(p) = &args.file {
         return Ok(ChartChoice::File(p.clone()));
     }
-    let Some(dir) = args.dir.clone().or_else(default_songs_dir) else {
-        return Ok(ChartChoice::BuiltIn);
+    let dirs = match args.dir.clone() {
+        Some(dir) => vec![dir],
+        None => songs_dirs(),
     };
-    let charts = state.scan(&dir);
+    if dirs.is_empty() {
+        return Ok(ChartChoice::BuiltIn);
+    }
+    let charts = state.scan_all(&dirs);
     if charts.is_empty() {
         return Ok(ChartChoice::BuiltIn);
     }
@@ -183,6 +187,40 @@ fn parse_audio_lead(value: &str) -> Result<f64, String> {
     } else {
         Err("audio lead must be finite".into())
     }
+}
+
+/// Where the selector looks without `--dir`: `$TAPLINE_SONGS_DIR` alone
+/// when it is set; else the charts beside the program and the player's own
+/// (`songs` in the state folder), together with the first of `./songs`,
+/// `./tests/fixtures` and `~/.tapline/songs` that exists.
+pub fn songs_dirs() -> Vec<PathBuf> {
+    if let Some(dir) = std::env::var_os("TAPLINE_SONGS_DIR")
+        .map(PathBuf::from)
+        .filter(|p| p.is_dir())
+    {
+        return vec![dir];
+    }
+    let mut dirs: Vec<PathBuf> = Vec::new();
+    let mut add = |dir: PathBuf| {
+        let real = dir.canonicalize().unwrap_or_else(|_| dir.clone());
+        if dir.is_dir()
+            && !dirs
+                .iter()
+                .any(|d| d.canonicalize().unwrap_or_else(|_| d.clone()) == real)
+        {
+            dirs.push(dir);
+        }
+    };
+    if let Some(dir) = crate::paths::bundled_songs_dir() {
+        add(dir);
+    }
+    if let Some(dir) = crate::paths::player_songs_dir() {
+        add(dir);
+    }
+    if let Some(dir) = default_songs_dir() {
+        add(dir);
+    }
+    dirs
 }
 
 fn default_songs_dir() -> Option<PathBuf> {
@@ -458,6 +496,30 @@ mod tests {
         std::env::set_var("HOME", &home);
         let out = default_songs_dir();
         assert_eq!(out.as_deref(), Some(songs.as_path()));
+    }
+
+    #[test]
+    fn songs_dirs_takes_the_env_var_alone() {
+        let _lock = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _snapshot = EnvSnapshot::capture();
+        let dir = tempdir();
+        std::env::set_var("TAPLINE_SONGS_DIR", &dir);
+        let workspace = tempdir();
+        std::fs::create_dir_all(workspace.join("songs")).unwrap();
+        std::env::set_current_dir(&workspace).unwrap();
+        assert_eq!(songs_dirs(), vec![dir]);
+    }
+
+    #[test]
+    fn songs_dirs_adds_the_upstream_fallback_once() {
+        let _lock = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _snapshot = EnvSnapshot::capture();
+        std::env::remove_var("TAPLINE_SONGS_DIR");
+        std::env::remove_var("HOME");
+        let workspace = tempdir();
+        std::fs::create_dir_all(workspace.join("songs")).unwrap();
+        std::env::set_current_dir(&workspace).unwrap();
+        assert_eq!(songs_dirs(), vec![PathBuf::from("songs")]);
     }
 
     #[test]

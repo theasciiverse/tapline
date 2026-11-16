@@ -6,6 +6,7 @@ pub mod chart;
 pub mod cli;
 pub mod game;
 pub mod gauge;
+pub mod paths;
 pub mod render;
 pub mod results;
 pub mod runtime;
