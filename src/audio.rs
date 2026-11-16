@@ -324,7 +324,16 @@ impl SampleBank {
     }
 }
 
+/// True when no sound device may be opened: under `cfg(test)`, or with
+/// `TAPLINE_NO_AUDIO` set (test processes, recordings), as with `--no-audio`.
+pub fn audio_disabled() -> bool {
+    cfg!(test) || std::env::var_os("TAPLINE_NO_AUDIO").is_some_and(|v| !v.is_empty() && v != "0")
+}
+
 fn open_output() -> Option<MixerDeviceSink> {
+    if audio_disabled() {
+        return None;
+    }
     let mut stream = DeviceSinkBuilder::open_default_sink().ok()?;
     stream.log_on_drop(false);
     Some(stream)

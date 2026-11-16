@@ -159,6 +159,7 @@ fn run_in_audio_process() -> bool {
     let output = std::process::Command::new(std::env::current_exe().unwrap())
         .args(["--exact", &name, "--nocapture"])
         .env("TAPLINE_AUDIO_TEST_CHILD", "1")
+        .env("TAPLINE_NO_AUDIO", "1")
         .output()
         .unwrap();
     assert!(output.status.success(), "{output:?}");
