@@ -220,6 +220,7 @@ pub fn run_with_state(
     state.editing = false;
     state.refresh(charts);
     let audio = crate::audio::preview_output(!no_audio);
+    log::info!("selector: {} charts", charts.len());
     let mut preview = crate::preview::SelectionPreview::default();
     loop {
         let selected = state.selected();
@@ -230,20 +231,37 @@ pub fn run_with_state(
         );
         draw(out, charts, state, &progress)?;
         if event::poll(Duration::from_millis(200))? {
-            if let Event::Key(k) = event::read()? {
+            let ev = event::read()?;
+            log::debug!("selector event {ev:?}");
+            if let Event::Key(k) = ev {
                 if k.kind == KeyEventKind::Release {
                     continue;
                 }
                 if !state.editing {
                     match k.code {
-                        KeyCode::Esc | KeyCode::Char('q' | 'Q') => return Ok(None),
+                        KeyCode::Esc | KeyCode::Char('q' | 'Q') => {
+                            log::info!("selector: quit");
+                            return Ok(None);
+                        }
                         KeyCode::Enter if selected.is_some() => {
-                            return Ok(selected.map(|i| charts[i].clone()))
+                            let chart = selected.map(|i| charts[i].clone());
+                            if let Some(c) = &chart {
+                                log::info!("selector: chose {} ({})", c.title, c.path.display());
+                            }
+                            return Ok(chart);
                         }
                         _ => {}
                     }
                 }
                 state.key(k.code, charts);
+                log::debug!(
+                    "selector: cursor {} of {} matches, query {:?}, lanes {:?}, editing {}",
+                    state.cursor,
+                    state.indices.len(),
+                    state.query,
+                    state.lanes,
+                    state.editing
+                );
             }
         }
     }

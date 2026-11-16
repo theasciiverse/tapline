@@ -45,8 +45,29 @@ pub fn play_chart(
     chart.duration_ms =
         bank.chart_duration_ms(&chart, opts.auto_ks, opts.synth_mode, opts.audio_lead_ms);
     let mut game = game::Game::new(chart);
+    log::info!(
+        "play {:?} lanes {} notes {} bgm events {} keysounds {} audio {} auto_ks {}",
+        game.chart.title,
+        game.chart.lane_count,
+        game.chart.notes.len(),
+        game.chart.bgm.len(),
+        game.chart.wav_paths.len(),
+        bank.enabled,
+        opts.auto_ks
+    );
     execute!(out, terminal::Clear(terminal::ClearType::All))?;
     run_game(out, &mut game, &bank, &opts)?;
+    log::info!(
+        "play over: completed {} score {} max combo {} perfect {} great {} good {} miss {} gauge {:.1}",
+        game.completed,
+        game.score,
+        game.max_combo,
+        game.perfect,
+        game.great,
+        game.good,
+        game.miss,
+        game.gauge.value()
+    );
     let progress = save_result(identity.as_ref(), &game, args.auto_ks);
     after_playback(bank, || show_result(out, &game, &progress))
 }
@@ -103,11 +124,29 @@ fn run_game(
     let start = Instant::now();
     let mut next_frame = Instant::now() + FRAME_DT;
     let mut state = LoopState::new(build_auto_notes(game, opts));
+    let mut snapshot = f64::NEG_INFINITY;
 
     while !state.quit {
         let now = elapsed_ms(start);
         if game.advance_completion(now) {
+            log::info!("chart complete at {now:.0} ms");
             break;
+        }
+        if now - snapshot >= 500.0 {
+            snapshot = now;
+            log::debug!(
+                "snapshot {:.0} ms of {:.0}, score {}, combo {}, perfect {} great {} good {} miss {}, gauge {:.1}, held {:?}",
+                now,
+                game.chart.duration_ms,
+                game.score,
+                game.combo,
+                game.perfect,
+                game.great,
+                game.good,
+                game.miss,
+                game.gauge.value(),
+                state.pressed_keys
+            );
         }
         draw_frame(out, game, bank, opts, &mut state, &mut bga, now)?;
         pump_input(out, game, bank, opts, &mut state, start, next_frame)?;
@@ -168,6 +207,7 @@ fn draw_frame(
     state.screen.resize(cols, rows);
     let mode: u8 = if now < opts.countdown_ms { 1 } else { 2 };
     if mode != state.prev_mode {
+        log::info!("{} at {now:.0} ms", if mode == 1 { "countdown" } else { "play" });
         queue!(state.screen, terminal::Clear(terminal::ClearType::All))?;
         state.prev_mode = mode;
     }
@@ -243,6 +283,7 @@ fn pump_input(
             return Ok(());
         }
         let input = event::read()?;
+        log::debug!("event at {:.1} ms {input:?}", elapsed_ms(start));
         if matches!(input, Event::Resize(..)) {
             execute!(out, terminal::Clear(terminal::ClearType::All))?;
             state.screen.invalidate();
@@ -271,6 +312,7 @@ fn handle_key(
 ) -> bool {
     match code {
         KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('Q') if kind == KeyEventKind::Press => {
+            log::info!("quit at {now:.0} ms");
             state.quit = true;
             true
         }

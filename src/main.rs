@@ -24,7 +24,10 @@ fn main() -> ExitCode {
 
 /// Validate timing before initializing audio or entering terminal raw mode.
 fn run_app() -> Result<()> {
+    // Session log: RUST_LOG=debug tapline 2>tapline.log
+    env_logger::init();
     let args = Args::parse();
+    log::info!("tapline {} {:?}", env!("CARGO_PKG_VERSION"), args);
     args.validate().unwrap_or_else(|err| err.exit());
     if args.test_tone {
         return run_test_tone();
