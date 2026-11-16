@@ -142,13 +142,34 @@ impl Store {
     }
 }
 
+/// `results.json` in `$TAPLINE_DATA_DIR`, else in the state folder
+/// (`crate::paths::state_dir`). A `results.json` in the folder earlier
+/// versions used (`legacy_directory`) is copied over the first time, so
+/// personal bests carry on.
 pub fn data_path() -> Option<PathBuf> {
-    let base = std::env::var_os("TAPLINE_DATA_DIR").map(PathBuf::from);
-    base.or_else(platform_directory)
-        .map(|dir| dir.join("results.json"))
+    if let Some(dir) = std::env::var_os("TAPLINE_DATA_DIR").map(PathBuf::from) {
+        return Some(dir.join("results.json"));
+    }
+    let path = crate::paths::state_dir()?.join("results.json");
+    if !path.exists() {
+        if let Some(old) = legacy_directory().map(|d| d.join("results.json")) {
+            if old.is_file() {
+                let copied = path
+                    .parent()
+                    .map_or(Ok(()), std::fs::create_dir_all)
+                    .and_then(|_| std::fs::copy(&old, &path));
+                match copied {
+                    Ok(_) => log::info!("copied {} to {}", old.display(), path.display()),
+                    Err(e) => log::warn!("could not copy {}: {e}", old.display()),
+                }
+            }
+        }
+    }
+    Some(path)
 }
 
-fn platform_directory() -> Option<PathBuf> {
+/// Where results lived before the state folder: the platform's data folder.
+fn legacy_directory() -> Option<PathBuf> {
     if cfg!(target_os = "windows") {
         return std::env::var_os("LOCALAPPDATA").map(|p| PathBuf::from(p).join("tapline"));
     }

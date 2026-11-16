@@ -16,6 +16,8 @@ anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 crossterm = "0.29"
 encoding_rs = "0.8"
+env_logger = { version = "0.11", default-features = false, features = ["auto-color", "humantime"] }
+log = "0.4"
 image = { version = "0.25", default-features = false, features = ["bmp", "png", "jpeg", "gif"] }
 rayon = "1"
 serde = { version = "1", features = ["derive"] }
